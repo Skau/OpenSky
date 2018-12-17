@@ -4,15 +4,7 @@
 #include <QMainWindow>
 #include <QGeoCoordinate>
 
-struct Position
-{
-    Position() : latitude(0.0), longitude(0.0) {}
-    Position(double latitudeIn, double longitudeIn) : latitude(latitudeIn), longitude(longitudeIn) {}
-
-    Position operator-(const Position& other) { return Position(std::abs(longitude - other.longitude), std::abs(latitude - other.latitude)); }
-
-    double latitude, longitude;
-};
+typedef std::pair<int, double> IndexDistancePair;
 
 namespace Ui {
 class MainWindow;
@@ -44,9 +36,13 @@ private:
 
     void addClosestFlightDetailsToListWidget(const QJsonArray& flight);
 
+    double clamp(double value, double low, double high);
+
+    static bool compare(const IndexDistancePair& pair1, const IndexDistancePair& pair2) { return pair1.second < pair2.second; }
+
     QString callsign_;
 
-    const QGeoCoordinate myPosition_{59.744494, 10.214935};
+    QGeoCoordinate myPosition_;
 };
 
 #endif // MAINWINDOW_H

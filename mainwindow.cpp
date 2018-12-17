@@ -11,16 +11,22 @@
 #include <math.h>
 #include <QDesktopServices>
 #include <ctime>
-
-#define pi 3.14159265358979323846
+#include <vector>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow), callsign_{""}
+    ui(new Ui::MainWindow), callsign_{""}, myPosition_{QGeoCoordinate(0,0)}
 {
     ui->setupUi(this);
 
+    ui->latitudeLineEdit->setValidator(new QDoubleValidator(-90, 90, 6, this));
+    ui->longitudeLineEdit->setValidator(new QDoubleValidator(-180, 180, 6, this));
+
+    ui->latitudeLineEdit->setText("59.744473");
+    ui->longitudeLineEdit->setText("10.214885");
+
     setWindowTitle("Get nearest flight");
+    ui->goToFlightButton->setEnabled(false);
 }
 
 MainWindow::~MainWindow()
@@ -30,9 +36,38 @@ MainWindow::~MainWindow()
 
 void MainWindow::updateData()
 {
+    ui->listWidget->clear();
+    if(ui->goToFlightButton->isEnabled())
+    {
+        ui->goToFlightButton->setEnabled(false);
+    }
+
+    double latitude = ui->latitudeLineEdit->text().toDouble();
+    double longitude = ui->longitudeLineEdit->text().toDouble();
+
+    if(!ui->latitudeLineEdit->text().size() || latitude <= -90 || latitude >= 90)
+    {
+        ui->statusBar->showMessage("Latitude invalid! (Min -90° and max 90°", 2000);
+        return;
+    }
+    else if(!ui->longitudeLineEdit->text().size() || longitude <= -180 || longitude >= 180)
+    {
+        ui->statusBar->showMessage("Longitude invalid! (Min -180° and max 180°", 2000);
+        return;
+    }
+
+    QString url = "https://opensky-network.org/api/states/all?";
+    url +=
+            "lamin=" + QString::number(clamp(latitude-2, -90, 90)) +
+            "&lomin=" + QString::number(clamp(longitude-4, -180, 180)) +
+            "&lamax=" + QString::number(clamp(latitude+2, -90, 90)) +
+            "&lomax=" + QString::number(clamp(longitude+4, -180, 180));
+
+    myPosition_ = QGeoCoordinate(latitude, longitude);
+
     QNetworkAccessManager* manager = new QNetworkAccessManager(this);
 
-    reply_ = manager->get(QNetworkRequest(QUrl("https://opensky-network.org/api/states/all?lamin=57&lomin=2&lamax=72&lomax=32")));
+    reply_ = manager->get(QNetworkRequest(QUrl(url)));
 
     connect(manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(onResult(QNetworkReply*)));
 
@@ -64,13 +99,16 @@ void MainWindow::onResult(QNetworkReply* reply)
             addClosestFlightDetailsToListWidget(closestFlight);
         }
     }
+
+    if(callsign_ != "")
+    {
+        ui->goToFlightButton->setEnabled(true);
+    }
 }
 
 const QJsonArray MainWindow::getClosestFlight(const QJsonArray& flights)
 {
-    QJsonArray closestFlight = flights[0].toArray();
-    QGeoCoordinate closestPosition(closestFlight[6].toDouble(), closestFlight[5].toDouble());
-    double shortestDistanceFromLocation = closestPosition.distanceTo(myPosition_), currentFlightDistanceFromLocation;
+    std::vector<IndexDistancePair> foundFlights;
 
     for(int i = 0; i < flights.size(); ++i)
     {
@@ -82,25 +120,19 @@ const QJsonArray MainWindow::getClosestFlight(const QJsonArray& flights)
             {
                 QGeoCoordinate flightPosition(flight[6].toDouble(), flight[5].toDouble());
 
-                currentFlightDistanceFromLocation = flightPosition.distanceTo(myPosition_);
-
-                if(currentFlightDistanceFromLocation < shortestDistanceFromLocation)
-                {
-                    closestFlight = flight;
-                    closestPosition = flightPosition;
-                    shortestDistanceFromLocation = currentFlightDistanceFromLocation;
-                }
+                foundFlights.push_back(std::make_pair(i, flightPosition.distanceTo(myPosition_)));
             }
         }
     }
-    return closestFlight;
+
+    auto it = std::min_element(foundFlights.begin(), foundFlights.end(), compare);
+
+    return flights[it->first].toArray();
 }
 
 void MainWindow::addClosestFlightDetailsToListWidget(const QJsonArray& flight)
 {
-    ui->listWidget->clear();
-
-    QGeoCoordinate position(flight[5].toDouble(), flight[6].toDouble(), flight[7].toDouble());
+    QGeoCoordinate position(flight[6].toDouble(), flight[5].toDouble(), flight[7].toDouble());
 
     QString string;
     string = "Closest flight is " + flight[1].toString();
@@ -109,7 +141,7 @@ void MainWindow::addClosestFlightDetailsToListWidget(const QJsonArray& flight)
     string = "Latitude: " + QString::number(position.latitude()) + "°, longitude: " + QString::number(position.longitude()) + "°";
     ui->listWidget->addItem(string);
 
-    string = "Altidude: " + QString::number(position.altitude() / 1000) + "km";
+    string = "Altidude: " + QString::number(position.altitude()) + "m";
     ui->listWidget->addItem(string);
 
     string = "Current speed: " + QString::number((flight[9].toDouble() * 18) / 5) + " km/h";
@@ -121,6 +153,19 @@ void MainWindow::addClosestFlightDetailsToListWidget(const QJsonArray& flight)
     std::time_t time = flight[3].toInt();
     string = "Position last updated: " + QString(std::asctime(std::localtime(&time)));
     ui->listWidget->addItem(string);
+}
+
+double MainWindow::clamp(double value, double low, double high)
+{
+    if(value < low)
+    {
+        value = low;
+    }
+    else if(value > high)
+    {
+        value = high;
+    }
+    return value;
 }
 
 void MainWindow::on_updateButton_clicked()
