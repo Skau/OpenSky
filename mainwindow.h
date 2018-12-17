@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+
 #include <QGeoCoordinate>
 
 typedef std::pair<int, double> IndexDistancePair;
@@ -32,9 +33,9 @@ private:
 
     class QNetworkReply* reply_;
 
-    const QJsonArray getClosestFlight(const QJsonArray& flights);
+    const QJsonArray getClosestFlight(const QJsonArray& flights) const;
 
-    void addClosestFlightDetailsToListWidget(const QJsonArray& flight);
+    void addClosestFlightDetailsToListWidget(const QJsonArray& flight) const;
 
     double clamp(double value, double low, double high);
 

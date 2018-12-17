@@ -1,16 +1,16 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+
 #include <QDebug>
 #include <QUrl>
+#include <QDesktopServices>
 #include <QtNetwork/qnetworkaccessmanager.h>
 #include <QtNetwork/qnetworkrequest.h>
 #include <QtNetwork/QNetworkReply>
 #include <qjsondocument.h>
 #include <qjsonobject.h>
 #include <qjsonarray.h>
-#include <math.h>
-#include <QDesktopServices>
-#include <ctime>
+
 #include <vector>
 
 MainWindow::MainWindow(QWidget *parent) :
@@ -37,10 +37,7 @@ MainWindow::~MainWindow()
 void MainWindow::updateData()
 {
     ui->listWidget->clear();
-    if(ui->goToFlightButton->isEnabled())
-    {
-        ui->goToFlightButton->setEnabled(false);
-    }
+    ui->goToFlightButton->setEnabled(false);
 
     double latitude = ui->latitudeLineEdit->text().toDouble();
     double longitude = ui->longitudeLineEdit->text().toDouble();
@@ -56,14 +53,14 @@ void MainWindow::updateData()
         return;
     }
 
+    myPosition_ = QGeoCoordinate(latitude, longitude);
+
     QString url = "https://opensky-network.org/api/states/all?";
     url +=
             "lamin=" + QString::number(clamp(latitude-2, -90, 90)) +
             "&lomin=" + QString::number(clamp(longitude-4, -180, 180)) +
             "&lamax=" + QString::number(clamp(latitude+2, -90, 90)) +
             "&lomax=" + QString::number(clamp(longitude+4, -180, 180));
-
-    myPosition_ = QGeoCoordinate(latitude, longitude);
 
     QNetworkAccessManager* manager = new QNetworkAccessManager(this);
 
@@ -87,18 +84,13 @@ void MainWindow::onResult(QNetworkReply* reply)
     QJsonObject jsonObject = doc.object();
 
     auto it = jsonObject.find("states");
-    if(it->isArray())
-    {
-        QJsonArray flights = it->toArray();
 
-        QJsonArray closestFlight = getClosestFlight(flights);
+    QJsonArray flights = it->toArray();
+    QJsonArray closestFlight = getClosestFlight(flights);
 
-        if(callsign_ != closestFlight[1].toString())
-        {
-            callsign_ = closestFlight[1].toString();
-            addClosestFlightDetailsToListWidget(closestFlight);
-        }
-    }
+    callsign_ = closestFlight[1].toString();
+    addClosestFlightDetailsToListWidget(closestFlight);
+
 
     if(callsign_ != "")
     {
@@ -106,7 +98,7 @@ void MainWindow::onResult(QNetworkReply* reply)
     }
 }
 
-const QJsonArray MainWindow::getClosestFlight(const QJsonArray& flights)
+const QJsonArray MainWindow::getClosestFlight(const QJsonArray& flights) const
 {
     std::vector<IndexDistancePair> foundFlights;
 
@@ -130,12 +122,12 @@ const QJsonArray MainWindow::getClosestFlight(const QJsonArray& flights)
     return flights[it->first].toArray();
 }
 
-void MainWindow::addClosestFlightDetailsToListWidget(const QJsonArray& flight)
+void MainWindow::addClosestFlightDetailsToListWidget(const QJsonArray& flight) const
 {
     QGeoCoordinate position(flight[6].toDouble(), flight[5].toDouble(), flight[7].toDouble());
-
     QString string;
-    string = "Closest flight is " + flight[1].toString();
+
+    string = "Approx. closest flight is " + flight[1].toString();
     ui->listWidget->addItem(string);
 
     string = "Latitude: " + QString::number(position.latitude()) + "°, longitude: " + QString::number(position.longitude()) + "°";
